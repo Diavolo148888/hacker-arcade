@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME 04 — PORT ROULETTE</title>
+<style>
+:root { --bg: #020a02; --green: #33ff66; --dim: #1a7a3a; --amber: #ffb000; --red: #ff3333; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--green);
+  font:14px/1.5 'Cascadia Code','Courier New',monospace; padding:20px;
+  text-shadow:0 0 6px rgba(51,255,102,.4); }
+.head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  border-bottom:1px solid var(--dim); padding-bottom:10px; margin-bottom:14px; }
+.score { color:var(--amber); }
+.timer { font-size:1.3rem; }
+.timer.low { color:var(--red); animation:blink .5s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.round { background:rgba(51,255,102,.05); border:1px dashed var(--dim); padding:16px;
+  text-align:center; margin-bottom:14px; }
+.round .lbl { color:var(--dim); font-size:.72rem; letter-spacing:.2em; }
+.round .svc { font-size:1.5rem; margin:8px 0; }
+.grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.opt { background:transparent; border:1px solid var(--dim); color:var(--green);
+  font:inherit; padding:14px 6px; cursor:pointer; }
+.opt:hover { border-color:var(--green); background:rgba(51,255,102,.07); }
+.opt.right { border-color:var(--green); background:rgba(51,255,102,.15); }
+.opt.wrong { border-color:var(--red); color:var(--red); }
+.msg { margin-top:12px; min-height:1.4em; text-align:center; }
+.msg.ok { color:var(--green); }
+.msg.bad { color:var(--red); }
+.strikes { color:var(--red); letter-spacing:.3em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>PORT ROULETTE <span id="lvl" style="color:var(--amber)">RND 1</span></div>
+  <div>SCORE <span class="score" id="score">0</span></div>
+  <div class="timer" id="timer">15.0</div>
+  <div class="strikes" id="strikes"></div>
+</div>
+
+<div class="round">
+  <div class="lbl">WHICH PORT DOES THIS SERVICE SPEAK ON?</div>
+  <div class="svc" id="svc"></div>
+</div>
+
+<div class="grid" id="opts"></div>
+<div class="msg" id="msg"></div>
+
+<script>
+'use strict';
+const SERVICES = {
+  21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS',
+  80: 'HTTP', 110: 'POP3', 143: 'IMAP', 443: 'HTTPS', 445: 'SMB',
+  3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL', 6379: 'Redis',
+  8080: 'HTTP-alt', 9200: 'Elasticsearch',
+};
+
+let rnd = 1, score = 0, strikes = 0, timeLeft = 15, timer = null, answer = 0;
+
+function newRound() {
+  clearInterval(timer);
+  timeLeft = Math.max(8, 15 - Math.floor(rnd / 3));
+  document.getElementById('lvl').textContent = 'RND ' + rnd;
+  document.getElementById('timer').textContent = timeLeft.toFixed(1);
+  document.getElementById('timer').className = 'timer';
+  document.getElementById('msg').textContent = '';
+  document.getElementById('msg').className = 'msg';
+
+  const ports = Object.keys(SERVICES).map(Number);
+  answer = ports[Math.floor(Math.random() * ports.length)];
+  document.getElementById('svc').textContent = SERVICES[answer];
+
+  // options: answer + 3 decoy ports
+  const opts = new Set([answer]);
+  while (opts.size < 4) {
+    const p = ports[Math.floor(Math.random() * ports.length)];
+    if (p !== answer) opts.add(p);
+  }
+  const arr = [...opts].sort((a, b) => a - b);
+  const el = document.getElementById('opts');
+  el.innerHTML = '';
+  arr.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'opt';
+    b.textContent = p;
+    b.onclick = () => pick(b, p);
+    el.appendChild(b);
+  });
+
+  timer = setInterval(tick, 100);
+}
+
+function tick() {
+  timeLeft -= 0.1;
+  const el = document.getElementById('timer');
+  el.textContent = timeLeft.toFixed(1);
+  if (timeLeft < 5) el.className = 'timer low';
+  if (timeLeft <= 0) {
+    clearInterval(timer);
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    const msg = document.getElementById('msg');
+    msg.className = 'msg bad';
+    msg.textContent = 'TIMEOUT — ' + SERVICES[answer] + ' speaks on port ' + answer;
+    if (strikes >= 3) { endGame(); return; }
+    setTimeout(newRound, 1800);
+  }
+}
+
+function pick(btn, p) {
+  const msg = document.getElementById('msg');
+  if (p === answer) {
+    btn.classList.add('right');
+    const pts = Math.round(timeLeft) * 10 + 20;
+    score += pts;
+    rnd++;
+    document.getElementById('score').textContent = score;
+    msg.className = 'msg ok';
+    msg.textContent = 'CORRECT. +' + pts + ' pts.';
+    setTimeout(newRound, 600);
+  } else {
+    btn.classList.add('wrong');
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    msg.className = 'msg bad';
+    msg.textContent = 'WRONG — ' + SERVICES[answer] + ' is on port ' + answer + ', not ' + p + '.';
+    if (strikes >= 3) { endGame(); }
+  }
+}
+
+function endGame() {
+  clearInterval(timer);
+  const msg = document.getElementById('msg');
+  msg.className = 'msg bad';
+  msg.textContent = 'GAME OVER — FINAL SCORE: ' + score + '. Refresh to retry.';
+  document.getElementById('opts').innerHTML = '';
+}
+
+newRound();
+</script>
+</body>
+</html>

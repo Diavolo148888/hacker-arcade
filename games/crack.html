@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME 01 — PASSWORD CRACK</title>
+<style>
+:root { --bg: #020a02; --green: #33ff66; --dim: #1a7a3a; --amber: #ffb000; --red: #ff3333; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--green);
+  font:14px/1.5 'Cascadia Code','Courier New',monospace; padding:20px;
+  text-shadow:0 0 6px rgba(51,255,102,.4); }
+.head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  border-bottom:1px solid var(--dim); padding-bottom:10px; margin-bottom:14px; }
+.lvl { color:var(--amber); }
+.timer { font-size:1.3rem; }
+.timer.low { color:var(--red); animation:blink .5s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.target { background:rgba(51,255,102,.05); border:1px dashed var(--dim); padding:12px;
+  margin-bottom:12px; word-break:break-all; }
+.target .lbl { color:var(--dim); font-size:.72rem; letter-spacing:.2em; }
+.target .hash { font-size:1.15rem; margin-top:4px; }
+.hint { color:var(--dim); font-size:.78rem; margin-top:6px; }
+.guess { width:100%; background:transparent; border:1px solid var(--dim); color:var(--green);
+  font:inherit; padding:10px 12px; outline:none; }
+.guess:focus { border-color:var(--green); }
+.btn { background:transparent; border:1px solid var(--green); color:var(--green);
+  font:inherit; padding:8px 18px; margin-top:10px; cursor:pointer; letter-spacing:.1em; }
+.btn:hover { background:rgba(51,255,102,.08); box-shadow:0 0 14px rgba(51,255,102,.2); }
+.msg { margin-top:12px; min-height:1.4em; }
+.msg.ok { color:var(--green); }
+.msg.bad { color:var(--red); }
+.score { color:var(--amber); }
+table { width:100%; border-collapse:collapse; font-size:.8rem; margin-top:6px; }
+td { padding:4px 8px; border-bottom:1px solid rgba(26,122,58,.4); }
+.strikes { color:var(--red); letter-spacing:.3em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>PASSWORD CRACK <span class="lvl" id="lvl">LVL 1</span></div>
+  <div>SCORE <span class="score" id="score">0</span></div>
+  <div class="timer" id="timer">45.0</div>
+  <div class="strikes" id="strikes"></div>
+</div>
+
+<div class="target">
+  <div class="lbl">INTERCEPTED HASH — CRACK IT:</div>
+  <div class="hash" id="hash"></div>
+  <div class="hint" id="hint"></div>
+</div>
+
+<input class="guess" id="guess" placeholder="type the plaintext..." autocomplete="off">
+<button class="btn" onclick="submitGuess()">CRACK</button>
+<div class="msg" id="msg"></div>
+
+<div class="target" style="margin-top:16px;">
+  <div class="lbl">DICTIONARY (use these — transform rules apply):</div>
+  <table id="dict"></table>
+</div>
+
+<script>
+'use strict';
+// deterministic toy hash: not real crypto — a checksum-style demo of cracking
+function toyHash(s) {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    h1 = ((h1 ^ s.charCodeAt(i)) * 0x01000193) >>> 0;
+    h2 = ((h2 + s.charCodeAt(i) * (i + 7)) * 0x85ebca6b) >>> 0;
+  }
+  return (h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')).slice(0, 12);
+}
+
+const WORDS = ['admin', 'dragon', 'monkey', 'football', 'letmein', 'qwerty', 'shadow',
+  'master', 'passw0rd', 'iloveyou', 'sunshine', 'princess', 'baseball', 'superman'];
+
+// transform rules (leetspeak etc.) — the cracking skill being taught
+const RULES = [
+  [/[a@]/g, '4'], [/[eE]/g, '3'], [/[iI!]/g, '1'], [/[oO]/g, '0'],
+  [/[sS]/g, '5'], [/[tT]/g, '7'],
+];
+
+function transforms(word) {
+  const set = new Set([word, word.toUpperCase(), word[0].toUpperCase() + word.slice(1)]);
+  RULES.forEach(([pat, rep]) => {
+    set.add(word.replace(pat, rep));
+    set.add(word.replace(pat, rep).replace(RULES[0][0], '4'));
+  });
+  set.add(word + '1'); set.add(word + '!');
+  set.add(word + '123'); set.add('123' + word);
+  return [...set];
+}
+
+let level = 1, score = 0, strikes = 0, timeLeft = 45, timer = null, answer = '';
+
+function newRound() {
+  clearInterval(timer);
+  timeLeft = Math.max(20, 45 - (level - 1) * 4);
+  const word = WORDS[Math.floor(Math.random() * WORDS.length)];
+  const forms = transforms(word);
+  answer = forms[Math.floor(Math.random() * forms.length)];
+  document.getElementById('hash').textContent = toyHash(answer);
+  document.getElementById('hint').textContent =
+    'hint: dictionary word with ' + (answer !== word ? 'transform rules applied (l33t/append)' : 'no transforms');
+  document.getElementById('lvl').textContent = 'LVL ' + level;
+  document.getElementById('guess').value = '';
+  document.getElementById('msg').textContent = '';
+  document.getElementById('msg').className = 'msg';
+  document.getElementById('timer').textContent = timeLeft.toFixed(1);
+  document.getElementById('timer').className = 'timer';
+  timer = setInterval(tick, 100);
+}
+
+function tick() {
+  timeLeft -= 0.1;
+  const el = document.getElementById('timer');
+  el.textContent = timeLeft.toFixed(1);
+  if (timeLeft < 10) el.className = 'timer low';
+  if (timeLeft <= 0) {
+    clearInterval(timer);
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    const msg = document.getElementById('msg');
+    msg.className = 'msg bad';
+    msg.textContent = 'TIME EXPIRED — the answer was: ' + answer;
+    if (strikes >= 3) { endGame(); return; }
+    setTimeout(newRound, 2200);
+  }
+}
+
+function submitGuess() {
+  const g = document.getElementById('guess').value.trim().toLowerCase();
+  const msg = document.getElementById('msg');
+  if (!g) return;
+  if (g === answer.toLowerCase()) {
+    const pts = Math.round(timeLeft) * level;
+    score += pts;
+    level++;
+    document.getElementById('score').textContent = score;
+    msg.className = 'msg ok';
+    msg.textContent = 'CRACKED. +' + pts + ' pts — ACCESS GRANTED.';
+    setTimeout(newRound, 1000);
+  } else {
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    msg.className = 'msg bad';
+    msg.textContent = 'ACCESS DENIED — wrong guess.';
+    if (strikes >= 3) { endGame(); }
+  }
+}
+
+function endGame() {
+  clearInterval(timer);
+  const msg = document.getElementById('msg');
+  msg.className = 'msg bad';
+  msg.textContent = 'GAME OVER — FINAL SCORE: ' + score + ' (LVL ' + level + '). Refresh to play again.';
+  document.getElementById('guess').disabled = true;
+}
+
+// dictionary table
+(function () {
+  const t = document.getElementById('dict');
+  WORDS.forEach(w => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + w + '</td><td style="color:var(--dim)">' + toyHash(w) + '</td>';
+    t.appendChild(tr);
+  });
+})();
+
+document.getElementById('guess').addEventListener('keydown', e => { if (e.key === 'Enter') submitGuess(); });
+newRound();
+</script>
+</body>
+</html>

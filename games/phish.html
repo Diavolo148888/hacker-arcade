@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME 03 — PHISH SPOT</title>
+<style>
+:root { --bg: #020a02; --green: #33ff66; --dim: #1a7a3a; --amber: #ffb000; --red: #ff3333; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--green);
+  font:14px/1.5 'Cascadia Code','Courier New',monospace; padding:20px;
+  text-shadow:0 0 6px rgba(51,255,102,.4); }
+.head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  border-bottom:1px solid var(--dim); padding-bottom:10px; margin-bottom:14px; }
+.score { color:var(--amber); }
+.lives { color:var(--red); }
+.urlbox { background:rgba(51,255,102,.05); border:1px dashed var(--dim); padding:16px;
+  margin-bottom:14px; word-break:break-all; text-align:center; }
+.urlbox .lbl { color:var(--dim); font-size:.72rem; letter-spacing:.2em; margin-bottom:8px; }
+.urlbox .url { font-size:1.2rem; }
+.verdicts { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.v { background:transparent; border:1px solid var(--dim); color:var(--green);
+  font:inherit; padding:14px; cursor:pointer; letter-spacing:.1em; }
+.v:hover { background:rgba(51,255,102,.07); box-shadow:0 0 14px rgba(51,255,102,.15); }
+.v.safe:hover { border-color:var(--green); }
+.v.phish:hover { border-color:var(--red); color:var(--red); }
+.msg { margin-top:12px; min-height:1.4em; }
+.msg.ok { color:var(--green); }
+.msg.bad { color:var(--red); }
+.why { color:var(--dim); font-size:.8rem; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>PHISH SPOT <span id="lvl" style="color:var(--amber)">URL 1</span></div>
+  <div>SCORE <span class="score" id="score">0</span></div>
+  <div class="lives" id="lives"></div>
+</div>
+
+<div class="urlbox">
+  <div class="lbl">INCOMING URL — LEGIT OR PHISH?</div>
+  <div class="url" id="url"></div>
+</div>
+
+<div class="verdicts">
+  <button class="v safe" onclick="verdict(false)">LEGIT</button>
+  <button class="v phish" onclick="verdict(true)">PHISHING</button>
+</div>
+<div class="msg" id="msg"></div>
+<div class="why" id="why"></div>
+
+<script>
+'use strict';
+// REAL phishing-pattern knowledge: the same heuristics phishguard uses
+const PAIRS = [
+  // [legit, phish, why-the-phish-is-bad]
+  ['https://github.com/Diavolo148888', 'https://github.com.Diavolo148888.login-verify.top/session',
+   'brand in the PATH, real domain is login-verify.top'],
+  ['https://accounts.google.com/signin', 'https://accounts-google.com.signin.secure-alert.xyz/auth',
+   'hyphenated brand impersonation — the real domain is secure-alert.xyz'],
+  ['https://www.facebook.com/login', 'https://www.faceb00k.com/login',
+   'leetspeak swap: faceb00k with zeros — classic homoglyph trick'],
+  ['https://online.bpi.com.ph', 'https://bpi-online.verify-member.net/login',
+   'bank name in subdomain, real host is verify-member.net'],
+  ['https://www.paypal.com/ph/home', 'https://paypal.secure-login-services.top/webscr',
+   'paypal in subdomain only; real TLD is .top'],
+  ['https://mail.proton.me', 'https://proton.mail-security.center/verify',
+   'brand-in-path trick; real domain is mail-security.center'],
+  ['https://shopee.ph', 'https://shopee-pay.claim-reward.xyz/wallet',
+   'reward-claim bait on a lookalike domain'],
+  ['https://www.gcash.com', 'https://gcash-verification.win/secure',
+   'the real GCash domain is gcash.com — verification.win is a trap'],
+  ['https://university.clsu.edu.ph', 'https://clsu.edu.ph.student-portal-login.online/regs',
+   'real domain buried; .online host is the attacker'],
+  ['https://www.netflix.com/login', 'https://netflix.billing-update.info/payment',
+   'billing-update phishing; real domain is netflix.com'],
+  ['https://www.reddit.com/r/bugbounty', 'https://reddlt.com/r/bugbounty',
+   'capital-i lookalike: reddlt vs reddit'],
+  ['https://appleid.apple.com', 'https://appleid.apple.com.verify-icloud.cloud/signin',
+   'apple.com in the path only; real host is verify-icloud.cloud'],
+];
+
+let n = 0, score = 0, lives = 3, current = null;
+
+function newRound() {
+  document.getElementById('lvl').textContent = 'URL ' + (n + 1);
+  document.getElementById('msg').textContent = '';
+  document.getElementById('msg').className = 'msg';
+  document.getElementById('why').textContent = '';
+  const pair = PAIRS[Math.floor(Math.random() * PAIRS.length)];
+  // 50/50: show legit or phish
+  const showPhish = Math.random() < 0.55;
+  current = { isPhish: showPhish, pair };
+  document.getElementById('url').textContent = showPhish ? pair[1] : pair[0];
+}
+
+function verdict(sayPhish) {
+  const msg = document.getElementById('msg');
+  const why = document.getElementById('why');
+  const right = sayPhish === current.isPhish;
+  if (right) {
+    score += 100;
+    document.getElementById('score').textContent = score;
+    msg.className = 'msg ok';
+    msg.textContent = 'CORRECT. +100 — instinct confirmed.';
+    if (current.isPhish) why.textContent = 'tell: ' + current.pair[2];
+  } else {
+    lives--;
+    document.getElementById('lives').textContent = 'X'.repeat(Math.max(0, 3 - lives));
+    msg.className = 'msg bad';
+    msg.textContent = current.isPhish
+      ? 'WRONG — that was PHISHING. ' + current.pair[2]
+      : 'WRONG — that URL was legit. False positives cost trust too.';
+    why.textContent = current.isPhish ? '' : 'look twice next time.';
+    if (lives <= 0) {
+      msg.textContent += ' GAME OVER — FINAL SCORE: ' + score + '. Refresh to retry.';
+      document.querySelector('.v.safe').disabled = true;
+      document.querySelector('.v.phish').disabled = true;
+      return;
+    }
+  }
+  n++;
+  setTimeout(newRound, 1400);
+}
+
+newRound();
+</script>
+</body>
+</html>

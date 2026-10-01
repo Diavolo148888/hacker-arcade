@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME 02 — TRACE THE ROUTE</title>
+<style>
+:root { --bg: #020a02; --green: #33ff66; --dim: #1a7a3a; --amber: #ffb000; --red: #ff3333; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--green);
+  font:14px/1.5 'Cascadia Code','Courier New',monospace; padding:20px;
+  text-shadow:0 0 6px rgba(51,255,102,.4); }
+.head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  border-bottom:1px solid var(--dim); padding-bottom:10px; margin-bottom:14px; }
+.score { color:var(--amber); }
+.timer { font-size:1.3rem; }
+.timer.low { color:var(--red); animation:blink .5s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.route { margin-bottom:14px; }
+.hop { padding:8px 12px; border:1px solid var(--dim); margin-bottom:6px;
+  display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.hop .ip { word-break:break-all; }
+.hop .lat { color:var(--dim); font-size:.8rem; }
+.hop.current { border-color:var(--green); box-shadow:0 0 14px rgba(51,255,102,.15); }
+.hop.dead { color:var(--red); border-color:var(--red); }
+.question { background:rgba(51,255,102,.05); border:1px dashed var(--dim); padding:12px; margin-bottom:12px; }
+.question .lbl { color:var(--dim); font-size:.72rem; letter-spacing:.2em; }
+.options { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.opt { background:transparent; border:1px solid var(--dim); color:var(--green);
+  font:inherit; padding:10px; cursor:pointer; text-align:left; word-break:break-all; }
+.opt:hover { border-color:var(--green); background:rgba(51,255,102,.07); }
+.opt.right { border-color:var(--green); background:rgba(51,255,102,.15); }
+.opt.wrong { border-color:var(--red); color:var(--red); }
+.msg { margin-top:12px; min-height:1.4em; }
+.msg.bad { color:var(--red); }
+.msg.ok { color:var(--green); }
+.strikes { color:var(--red); letter-spacing:.3em; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>TRACE THE ROUTE <span id="lvl" style="color:var(--amber)">HOP 1</span></div>
+  <div>SCORE <span class="score" id="score">0</span></div>
+  <div class="timer" id="timer">30.0</div>
+  <div class="strikes" id="strikes"></div>
+</div>
+
+<div class="route" id="route"></div>
+<div class="question">
+  <div class="lbl">TRACE COOLING — PICK THE NEXT HOP:</div>
+  <div id="qtext" style="margin-top:6px;"></div>
+  <div class="options" id="opts"></div>
+</div>
+<div class="msg" id="msg"></div>
+
+<script>
+'use strict';
+// deterministic toy hash for hop naming
+function toyHash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = ((h ^ s.charCodeAt(i)) * 0x01000193) >>> 0;
+  return h;
+}
+function ipFor(seed, i) {
+  const h = toyHash(seed + ':' + i);
+  return `10.${(h >> 24) & 255}.${(h >> 16) & 255}.${(h >> 8) & 255}`;
+}
+
+let hop = 1, score = 0, strikes = 0, timeLeft = 30, timer = null, route = [];
+let rightIp = '', seed = '';
+
+function newHop() {
+  clearInterval(timer);
+  timeLeft = Math.max(14, 30 - hop);
+  document.getElementById('lvl').textContent = 'HOP ' + hop;
+  document.getElementById('timer').textContent = timeLeft.toFixed(1);
+  document.getElementById('timer').className = 'timer';
+  document.getElementById('msg').textContent = '';
+  document.getElementById('msg').className = 'msg';
+
+  if (hop === 1) { seed = 'trace-' + Math.floor(Math.random() * 1e6); route = []; }
+  const prevIp = hop === 1 ? '192.168.1.57 (you)' : route[route.length - 1];
+  rightIp = ipFor(seed, hop);
+
+  const routeEl = document.getElementById('route');
+  routeEl.innerHTML = route.map((ip, i) =>
+    `<div class="hop"><span class="ip">${i + 1}. ${ip}</span><span class="lat">${(Math.random() * 40 + 4).toFixed(1)} ms</span></div>`
+  ).join('') + `<div class="hop current"><span class="ip">${hop}. ??? </span><span class="lat">tracing...</span></div>`;
+
+  document.getElementById('qtext').textContent =
+    `packet left ${prevIp} — where does it hop next?`;
+
+  // options: 1 right + 3 decoys
+  const opts = new Set([rightIp]);
+  while (opts.size < 4) {
+    const fake = ipFor('decoy' + Math.floor(Math.random() * 1e9), Math.floor(Math.random() * 50));
+    if (fake !== rightIp) opts.add(fake);
+  }
+  const arr = [...opts].sort(() => Math.random() - 0.5);
+  const el = document.getElementById('opts');
+  el.innerHTML = '';
+  arr.forEach(ip => {
+    const b = document.createElement('button');
+    b.className = 'opt';
+    b.textContent = ip;
+    b.onclick = () => pick(b, ip);
+    el.appendChild(b);
+  });
+
+  timer = setInterval(tick, 100);
+}
+
+function tick() {
+  timeLeft -= 0.1;
+  const el = document.getElementById('timer');
+  el.textContent = timeLeft.toFixed(1);
+  if (timeLeft < 8) el.className = 'timer low';
+  if (timeLeft <= 0) {
+    clearInterval(timer);
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    const msg = document.getElementById('msg');
+    msg.className = 'msg bad';
+    msg.textContent = 'TRACE COOLED — the hop was ' + rightIp;
+    if (strikes >= 3) { endGame(); return; }
+    setTimeout(newHop, 2000);
+  }
+}
+
+function pick(btn, ip) {
+  const msg = document.getElementById('msg');
+  if (ip === rightIp) {
+    btn.classList.add('right');
+    const pts = Math.round(timeLeft) * 10;
+    score += pts;
+    hop++;
+    document.getElementById('score').textContent = score;
+    route.push(rightIp);
+    msg.className = 'msg ok';
+    msg.textContent = 'HOP LOCKED. +' + pts + ' pts.';
+    setTimeout(newHop, 700);
+  } else {
+    btn.classList.add('wrong');
+    strikes++;
+    document.getElementById('strikes').textContent = 'X'.repeat(strikes);
+    msg.className = 'msg bad';
+    msg.textContent = 'DEAD END — that node drops the packet.';
+    if (strikes >= 3) { endGame(); }
+  }
+}
+
+function endGame() {
+  clearInterval(timer);
+  const msg = document.getElementById('msg');
+  msg.className = 'msg bad';
+  msg.textContent = 'TRACE LOST — FINAL SCORE: ' + score + ' (reached hop ' + hop + '). Refresh to retry.';
+  document.getElementById('opts').innerHTML = '';
+}
+
+newHop();
+</script>
+</body>
+</html>
